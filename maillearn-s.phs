@@ -1,0 +1,200 @@
+<?php
+
+  /*
+    let spamassassin learn HAM and SPAM through sa-learn
+    and transfer database to remote server to retrain spam
+    filter there
+  */
+
+  require_once(dirname(__FILE__) . "/../unchroot/unchroot.phs");
+
+  require_once(dirname(__FILE__) . "/maillearn-s.conf.phs");
+  require_once(dirname(__FILE__) . "/maillearn-s.func.phs");
+
+  // load optional config splitting
+  $arg_config = get_config($argv);
+  if (false !== $arg_config) {
+    require_once($arg_config);
+  }
+
+  function maillearn_s() {
+    // disallow concurrency (either by timeout or by lock file)
+    if (disallow_concurrency(TIMEOUT)) {
+      $ham_counter  = 0;
+      $spam_counter = 0;
+
+      // first of all clean up
+      if (is_file(STATUS_PATH)) {
+        // kill last status file
+        unlink(STATUS_PATH);
+      }
+
+      // also forget all previously learned HAM and SPAM
+      exec(SA_LEARN_CLEAR);
+
+      // check if the required folders exist
+      if (is_dir(dirname(PUSHINFO_PATH)) &&
+          is_dir(dirname(STATUS_PATH)) &&
+          is_dir(LOCAL_ABSOLUTE_PATH)) {
+        // read folder list
+        $dir_handle = opendir(LOCAL_ABSOLUTE_PATH);
+        $files      = array();
+        if (false !== $dir_handle) {
+          $filename = false;
+          do {
+            $filename = readdir($dir_handle);
+
+            if (false !== $filename) {
+              if (("." !== $filename) && (".." !== $filename)) {
+                if (is_dir(LOCAL_ABSOLUTE_PATH . $filename)) {
+                  array_push($files, $filename);
+                } // if (is_dir(...))
+              } // if (("." !== $filename) && (".." !== $filename))
+            } // if (false !== $filename)
+          } while (false !== $filename); // do
+
+          closedir($dir_handle);
+        } // if (false !== $dir_handle)
+
+        // sort the file array
+        sort($files, SORT_STRING | SORT_FLAG_CASE);
+
+        // handle found files
+        if (0 < count($files)) {
+          for ($index = 0; $index < count($files); $index++) {
+            $ham_dir  = LOCAL_ABSOLUTE_PATH . $files[$index] . LOCAL_RELATIVE_PATH_CUR;
+            $spam_dir = LOCAL_ABSOLUTE_PATH . $files[$index] . LOCAL_RELATIVE_PATH_SPAM_CUR;
+
+            if (is_dir($ham_dir)) {
+              exec(SA_LEARN_HAM . " " . escapeshellcmd($ham_dir));
+
+              print("HAM: " . $files[$index] . "\n");
+              $ham_counter++;
+            }
+            if (is_dir($spam_dir)) {
+              exec(SA_LEARN_SPAM . " " . escapeshellcmd($spam_dir));
+
+              print("SPAM: " . $files[$index] . "\n");
+              $spam_counter++;
+            }
+          }
+
+          // only proceed if we had HAM and SPAM
+          if ((0 < $ham_counter) && (0 < $spam_counter)) {
+            // first save the current HAM and SPAM
+            exec(SA_LEARN_SYNC);
+
+            // then backup everything to a file
+            exec(SA_LEARN_BACKUP . " " . escapeshellcmd(STATUS_PATH));
+
+            // if we really created a file
+            if (is_file(STATUS_PATH)) {
+              // connect via SSHv2
+              $connection = ssh2_connect(REMOTE_HOSTNAME, REMOTE_PORT);
+              if (false !== $connection) {
+                // authenticate
+                if (ssh2_auth_password($connection, REMOTE_USERNAME, REMOTE_PASSWORD)) {
+                  // use SFTP subsystem
+                  $sftp = ssh2_sftp($connection);
+                  if (false !== $sftp) {
+                    $local  = STATUS_PATH;
+                    $remote = "ssh2.sftp://$sftp" . REMOTE_ABSOLUTE_PATH;
+
+                    // default
+                    $success = false;
+
+                    // open local file
+                    $local_handle = fopen($local, "rb");
+                    if (false !== $local_handle) {
+                      // open remote file
+                      $remote_handle = fopen($remote, "wb");
+                      if (false !== $remote_handle) {
+                        // empty files pose as a success
+                        $success = true;
+
+                        // keep copying data
+                        while (!feof($local_handle)) {
+                          // read data
+                          $tmp = fread($local_handle, 1024);
+                          if (false !== $tmp) {
+                            // write data
+                            $tmp = fwrite($remote_handle, $tmp);
+                            if (false === $tmp) {
+                              $success = false;
+                              break;
+                            } // if (false === $tmp)
+                          } else {
+                            $success = false;
+                            break;
+                          } // if (false !== $tmp);
+                        } // while (!feof(...))
+
+                        fclose($remote_handle);
+                      } // if (false !== $remote_handle)
+
+                      fclose($local_handle);
+                    } // if (false !== $local_handle)
+
+                    // if copying succeeded
+                    if ($success) {
+                      $local_size  = filesize($local);
+                      $remote_size = filesize($remote);
+
+                      // check if files have same size
+                      if ((false !== $local_size) &&
+                          (false !== $remote_size) &&
+                          ($local_size === $remote_size)) {
+                        file_put_contents(PUSHINFO_PATH, $ham_counter . PUSHINFO_MESSAGE_HAM . $spam_counter . PUSHINFO_MESSAGE_SPAM);
+
+                        print("SUCCESS: done\n");
+                      } else {
+                        // try to remove remote file
+                        unlink($remote);
+
+                        print("FAIL: filesize mismatch\n");
+                      }
+                    } else {
+                      // try to remove remote file
+                      unlink($remote);
+
+                      print("FAIL: write failed\n");
+                    } // if ($success)
+                  } // if (false !== $sftp)
+                } // if (ssh2_auth_password($connection, REMOTE_USERNAME, REMOTE_PASSWORD))
+
+                $connection = null;
+              } // if (false !== $connection)
+            } // if (is_file(STATUS_PATH))
+          } // if ((0 < $ham_counter) && (0 < $spam_counter))
+        } // if (0 < count($files))
+      } // if (is_dir(...) && is_dir(...) && is_dir(...))
+
+      // free lock
+      allow_concurrency(TIMEOUT);
+    } // if (disallow_concurrency(TIMEOUT))
+  } // function maillearn_s()
+
+  if (defined("LOCAL_ABSOLUTE_PATH") &&
+      defined("LOCAL_RELATIVE_PATH_CUR") &&
+      defined("LOCAL_RELATIVE_PATH_SPAM_CUR") &&
+      defined("REMOTE_ABSOLUTE_PATH") &&
+      defined("REMOTE_HOSTNAME") &&
+      defined("REMOTE_PORT") &&
+      defined("REMOTE_USERNAME") &&
+      defined("REMOTE_PASSWORD") &&
+      defined("PUSHINFO_PATH") &&
+      defined("STATUS_PATH") &&
+      defined("PUSHINFO_MESSAGE_HAM") &&
+      defined("PUSHINFO_MESSAGE_SPAM") &&
+      defined("SA_LEARN_CLEAR") &&
+      defined("SA_LEARN_HAM") &&
+      defined("SA_LEARN_SPAM") &&
+      defined("SA_LEARN_SYNC") &&
+      defined("SA_LEARN_BACKUP") &&
+      defined("TIMEOUT")) {
+    maillearn_s();
+  } else {
+    print("ERROR: missing configuration - split \$config?\n");
+  }
+
+?>

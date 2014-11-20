@@ -1,0 +1,34 @@
+<?php
+
+  # defines the local absolute path to the mail home
+  # do not forget the trailing slash
+  define("LOCAL_ABSOLUTE_PATH", "/srv/mailusers/");
+
+  # defines the local relative path to the SPAM maildir cur
+  # do not forget the leading and trailing slash
+  define("LOCAL_RELATIVE_PATH_SPAM_CUR", "/Maildir/.Junk/cur/");
+
+  # defines the local relative path to the maildir cur
+  # do not forget the leading and trailing slash
+  define("LOCAL_RELATIVE_PATH_CUR", "/Maildir/cur/");
+
+  # defines the command to clear learned HAM and SPAM
+  define("SA_LEARN_CLEAR", "sa-learn --clear");
+
+  # defines the command to learn HAM
+  define("SA_LEARN_HAM", "sa-learn --no-sync --local --ham");
+
+  # defines the command to learn SPAM
+  define("SA_LEARN_SPAM", "sa-learn --no-sync --local --spam");
+
+  # defines the command to save learned HAM and SPAM
+  define("SA_LEARN_SYNC", "sa-learn --sync");
+
+  # defines the command to backup learned HAM and SPAM
+  define("SA_LEARN_BACKUP", "sa-learn --backup >");
+
+  # defines the push message
+  define("PUSHINFO_MESSAGE_HAM",  " hams and ");
+  define("PUSHINFO_MESSAGE_SPAM", " spams have been learned.");
+
+?>
