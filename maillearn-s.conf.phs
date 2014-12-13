@@ -1,16 +1,47 @@
 <?php
 
-  # defines the local absolute path to the mail home
-  # do not forget the trailing slash
-  define("LOCAL_ABSOLUTE_PATH", "/srv/mailusers/");
+  # defines where the push notification is located:
+  # * this path MUST point to a single file
+  # * the optional placeholder {%server} may be used which
+  #   contains the parameter given to the script for execution
+  define("PUSHINFO_PATH", "/srv/pushinfo/messages/maillearn-s.phs_{%server}");
 
-  # defines the local relative path to the SPAM maildir cur
-  # do not forget the leading and trailing slash
-  define("LOCAL_RELATIVE_PATH_SPAM_CUR", "/Maildir/.Junk/cur/");
+  # defines where the script stores its status:
+  # * this path MUST point to a single file
+  # * the optional placeholder {%server} may be used which
+  #   contains the parameter given to the script for execution
+  define("STATUS_PATH", "/srv/maillearn-s/status/status.{%server}");
 
-  # defines the local relative path to the maildir cur
-  # do not forget the leading and trailing slash
-  define("LOCAL_RELATIVE_PATH_CUR", "/Maildir/cur/");
+  # define timeout for PHP execution (as int)
+  # alternatively defines a lock file (as string):
+  # * this path MUST point to a single file
+  # * the optional placeholder {%server} may be used which
+  #   contains the parameter given to the script for execution
+  define("TIMEOUT", "/srv/maillearn-s/status/lock.{%server}");
+
+  # defines the local path to the maildir cur:
+  # * this path MAY either point to a single folder OR to a
+  #   list of folders by employing asterisks ("*")
+  # * do NOT forget the trailing slash
+  # * the optional placeholder {%server} may be used which
+  #   contains the parameter given to the script for execution
+  define("LOCAL_MAILDIR_CUR", "/srv/mailusers/*/Maildir/cur/");
+
+  # defines the local path to the INBOX maildir cur:
+  # * this path MAY either point to a single folder OR to a
+  #   list of folders by employing asterisks ("*")
+  # * do NOT forget the trailing slash
+  # * the optional placeholder {%server} may be used which
+  #   contains the parameter given to the script for execution
+  define("LOCAL_MAILDIR_INBOX_CUR", "/srv/mailusers/*/Maildir/.INBOX.*/cur/");
+
+  # defines the local path to the SPAM maildir cur:
+  # * this path MAY either point to a single file OR to a
+  #   list of files by employing asterisks ("*")
+  # * do NOT forget the trailing slash
+  # * the optional placeholder {%server} may be used which
+  #   contains the parameter given to the script for execution
+  define("LOCAL_MAILDIR_SPAM_CUR", "/srv/mailusers/*/Maildir/.Junk/cur/");
 
   # defines the command to clear learned HAM and SPAM
   define("SA_LEARN_CLEAR", "sa-learn --clear");

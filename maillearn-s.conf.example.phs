@@ -1,17 +1,7 @@
 <?php
 
-  # defines where the push notification is located
-  define("PUSHINFO_PATH", "/srv/pushinfo/messages/maillearn-s.phs_example");
-
-  # defines where the script stores its status
-  define("STATUS_PATH", "/srv/maillearn-s/status/status.example");
-
-  # define timeout for PHP execution (as int)
-  # alternatively defines a lock file (as string)
-  define("TIMEOUT", "/srv/maillearn-s/status/lock.example");
-
   # defines the remote absolute path to the exchanged file
-  define("REMOTE_ABSOLUTE_PATH", "/home/maillearn/status");
+  define("REMOTE_PATH", "/home/maillearn/status");
 
   # defines the remote hostname
   define("REMOTE_HOSTNAME", "<REPLACE-ME>");

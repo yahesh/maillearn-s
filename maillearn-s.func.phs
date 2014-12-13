@@ -1,0 +1,32 @@
+<?php
+
+  function get_server($params) {
+    $result = false;
+
+    // $params[0] is script name
+    if (1 < count($params)) {
+      // may only contain selected characters
+      if (1 === preg_match("/^([0-9a-zA-Z\-\_])*$/", $params[1])) {
+        $result = $params[1];
+      }
+    }
+
+    return $result;
+  }
+
+  // retrieve the name of the additional config file
+  function get_server_config($params) {
+    $result = false;
+
+    $server = get_server($params);
+    if (false !== $server) {
+      // check if the additional config file exists
+      if (posix_access(dirname(__FILE__) . "/maillearn-s.conf.$server.phs", POSIX_R_OK)) {
+        $result = dirname(__FILE__) . "/maillearn-s.conf.$server.phs";
+      }
+    }
+
+    return $result;
+  }
+
+?>
