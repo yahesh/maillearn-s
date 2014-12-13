@@ -114,7 +114,8 @@
           exec(SA_LEARN_SYNC);
 
           // then backup everything to a file
-          exec(SA_LEARN_BACKUP . " " . escapeshellcmd(expand_path_single(STATUS_PATH, $params)));
+          exec(SA_LEARN_BACKUP .
+               " \"" . escapeshellcmd(expand_path_single(STATUS_PATH, $params)) . "\"");
 
           // if we really created a file
           if (is_file(expand_path_single(STATUS_PATH, $params))) {
@@ -127,7 +128,8 @@
                 $sftp = ssh2_sftp($connection);
                 if (false !== $sftp) {
                   $local  = expand_path_single(STATUS_PATH, $params);
-                  $remote = "ssh2.sftp://$sftp" . sftp_fix_root(expand_path_single(REMOTE_PATH, $params, $sftp));
+                  $remote = "ssh2.sftp://$sftp" .
+                            sftp_fix_root(expand_path_single(REMOTE_PATH, $params, $sftp));
 
                   // default
                   $success = false;
