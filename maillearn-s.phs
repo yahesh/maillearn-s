@@ -1,24 +1,23 @@
 <?php
 
   /*
-    maillearn-s.phs version 0.2
+    maillearn-s.phs 0.3
 
-    [version 0.2]
-    * completely rewrote path configuration
-    * added output on errors
-
-    [version 0.1]
-    * initial release
-
-    let spamassassin learn HAM and SPAM through sa-learn
-    and transfer database to remote server to retrain spam
-    filter there
+    maillearn-s lets spamassassin learn HAM and SPAM through sa-learn
+    and transfers the database to remote server to retrain the spam
+    filter there.
   */
 
-  require_once(dirname(__FILE__) . "/../unchroot/unchroot.phs");
+  // some composer magic
+  require(__DIR__."/../vendor/autoload.php");
 
-  require_once(dirname(__FILE__) . "/maillearn-s.conf.phs");
-  require_once(dirname(__FILE__) . "/maillearn-s.func.phs");
+  // we use the SFTP class
+  use phpseclib\Net\SFTP;
+
+  require_once(__DIR__."/../unchroot/unchroot.phs");
+
+  require_once(__DIR__."/maillearn-s.conf.phs");
+  require_once(__DIR__."/maillearn-s.func.phs");
 
   // load optional config splitting
   $arg_config = get_server_config($argv);
@@ -29,34 +28,34 @@
   function maillearn_s($params) {
     // disallow concurrency (either by timeout or by lock file)
     if ((is_int(TIMEOUT) && disallow_concurrency(TIMEOUT)) ||
-        (is_string(TIMEOUT) && disallow_concurrency(expand_path_single(TIMEOUT, $params)))) {
+        (is_string(TIMEOUT) && disallow_concurrency(replace_placeholders(TIMEOUT, $params)))) {
       $ham_counter  = 0;
       $spam_counter = 0;
 
       // first of all clean up
-      if (is_file(expand_path_single(STATUS_PATH, $params))) {
+      if (is_file(replace_placeholders(STATUS_PATH, $params))) {
         // kill last status file
-        unlink(expand_path_single(STATUS_PATH, $params));
+        unlink(replace_placeholders(STATUS_PATH, $params));
       }
 
       // also forget all previously learned HAM and SPAM
       exec(SA_LEARN_CLEAR);
 
       // check if the required folders exist
-      if (is_dir(dirname(expand_path_single(PUSHINFO_PATH, $params))) &&
-          is_dir(dirname(expand_path_single(STATUS_PATH, $params)))) {
+      if (is_dir(dirname(replace_placeholders(PUSHINFO_PATH, $params))) &&
+          is_dir(dirname(replace_placeholders(STATUS_PATH, $params)))) {
         // read ham folders
         if (null !== LOCAL_MAILDIR_CUR) {
-          $folders = expand_path_list(LOCAL_MAILDIR_CUR, $params);
+          $folders = expand_path_list(replace_placeholders(LOCAL_MAILDIR_CUR, $params));
           if (false !== $folders) {
-            for ($index = 0; $index < count($folders); $index++) {
-              if (is_dir($folders[$index])) {
-                exec(SA_LEARN_HAM . " \"" . escapeshellcmd($folders[$index]) . "\"");
+            foreach ($folders as $folders_item) {
+              if (is_dir($folders_item)) {
+                exec(SA_LEARN_HAM. " \"".escapeshellcmd($folders_item)."\"");
 
-                print("HAM: " . $folders[$index] . "\n");
+                print("HAM: ".$folders_item."\n");
                 $ham_counter++;
               } else {
-                print("IGNORE: " . $folders[$index] . "\n");
+                print("IGNORE: ".$folders_item."\n");
               }
             }
           } else {
@@ -68,16 +67,16 @@
 
         // read ham folders
         if (null !== LOCAL_MAILDIR_INBOX_CUR) {
-          $folders = expand_path_list(LOCAL_MAILDIR_INBOX_CUR, $params);
+          $folders = expand_path_list(replace_placeholders(LOCAL_MAILDIR_INBOX_CUR, $params));
           if (false !== $folders) {
-            for ($index = 0; $index < count($folders); $index++) {
-              if (is_dir($folders[$index])) {
-                exec(SA_LEARN_HAM . " \"" . escapeshellcmd($folders[$index]) . "\"");
+            foreach ($folders as $folders_item) {
+              if (is_dir($folders_item)) {
+                exec(SA_LEARN_HAM." \"".escapeshellcmd($folders_item)."\"");
 
-                print("HAM: " . $folders[$index] . "\n");
+                print("HAM: ".$folders_item."\n");
                 $ham_counter++;
               } else {
-                print("IGNORE: " . $folders[$index] . "\n");
+                print("IGNORE: ".$folders_item."\n");
               }
             }
           } else {
@@ -89,16 +88,16 @@
 
         // read spam folders
         if (null !== LOCAL_MAILDIR_SPAM_CUR) {
-          $folders = expand_path_list(LOCAL_MAILDIR_SPAM_CUR, $params);
+          $folders = expand_path_list(replace_placeholders(LOCAL_MAILDIR_SPAM_CUR, $params));
           if (false !== $folders) {
-            for ($index = 0; $index < count($folders); $index++) {
-              if (is_dir($folders[$index])) {
-                exec(SA_LEARN_SPAM . " \"" . escapeshellcmd($folders[$index]) . "\"");
+            foreach ($folders as $folders_item) {
+              if (is_dir($folders_item)) {
+                exec(SA_LEARN_SPAM." \"".escapeshellcmd($folders_item)."\"");
 
-                print("SPAM: " . $folders[$index] . "\n");
+                print("SPAM: ".$folders_item."\n");
                 $spam_counter++;
               } else {
-                print("IGNORE: " . $folders[$index] . "\n");
+                print("IGNORE: ".$folders_item."\n");
               }
             }
           } else {
@@ -114,103 +113,66 @@
           exec(SA_LEARN_SYNC);
 
           // then backup everything to a file
-          exec(SA_LEARN_BACKUP .
-               " \"" . escapeshellcmd(expand_path_single(STATUS_PATH, $params)) . "\"");
+          exec(SA_LEARN_BACKUP." \"".escapeshellcmd(replace_placeholders(STATUS_PATH, $params))."\"");
 
           // if we really created a file
-          if (is_file(expand_path_single(STATUS_PATH, $params))) {
-            // connect via SSHv2
-            $connection = ssh2_connect(REMOTE_HOSTNAME, REMOTE_PORT);
-            if (false !== $connection) {
-              // authenticate
-              if (ssh2_auth_password($connection, REMOTE_USERNAME, REMOTE_PASSWORD)) {
-                // use SFTP subsystem
-                $sftp = ssh2_sftp($connection);
-                if (false !== $sftp) {
-                  $local  = expand_path_single(STATUS_PATH, $params);
-                  $remote = "ssh2.sftp://$sftp" .
-                            sftp_fix_root(expand_path_single(REMOTE_PATH, $params, $sftp));
+          if (is_file(replace_placeholders(STATUS_PATH, $params))) {
+            // connect via SFTP
+            $sftp = new SFTP(REMOTE_HOSTNAME, REMOTE_PORT);
 
-                  // default
-                  $success = false;
+            // clear the statcache to prevent side effects
+            $sftp->clearStatCache();
 
-                  // open local file
-                  $local_handle = fopen($local, "rb");
-                  if (false !== $local_handle) {
-                    // open remote file
-                    $remote_handle = fopen($remote, "wb");
-                    if (false !== $remote_handle) {
-                      // empty files pose as a success
-                      $success = true;
+            $remote_pubkey = null;
+            if (file_exists(replace_placeholders(REMOTE_PUBKEY_FILE, $params))) {
+              $remote_pubkey = file_get_contents(replace_placeholders(REMOTE_PUBKEY_FILE, $params));
+            }
 
-                      // keep copying data
-                      while (!feof($local_handle)) {
-                        // read data
-                        $tmp = fread($local_handle, 1024);
-                        if (false !== $tmp) {
-                          // write data
-                          $tmp = fwrite($remote_handle, $tmp);
-                          if (false === $tmp) {
-                            print("ERROR: remote file could not be written\n");
+            // check if the remote public key is correct
+            if ((null === REMOTE_PUBKEY_FILE) ||
+                (0 === strcmp(trim($sftp->getServerPublicHostKey()), trim($remote_pubkey)))) {
+              // login via SFTP
+              if ($sftp->login(REMOTE_USERNAME, REMOTE_PASSWORD)) {
+                $local  = replace_placeholders(STATUS_PATH, $params);
+                $remote = replace_placeholders(REMOTE_PATH, $params);
 
-                            $success = false;
-                            break;
-                          }
-                        } else {
-                          print("ERROR: local file could not be read\n");
+                // default
+                $success = false;
 
-                          $success = false;
-                          break;
-                        }
-                      }
+                // upload the backup - the last parameter "1" means to read from file $local
+                if ($sftp->put($remote, $local, 1)) {
+                  $local_size  = filesize($local);
+                  $remote_size = $sftp->filesize($remote);
 
-                      fclose($remote_handle);
-                    } else {
-                      print("ERROR: remote file could not be opened\n");
-                    }
+                  // check if files have same size
+                  if ((false !== $local_size) &&
+                      (false !== $remote_size) &&
+                      ($local_size === $remote_size)) {
+                    file_put_contents(replace_placeholders(PUSHINFO_PATH, $params),
+                                      $ham_counter.PUSHINFO_MESSAGE_HAM.
+                                      $spam_counter.PUSHINFO_MESSAGE_SPAM);
 
-                    fclose($local_handle);
-                  } else {
-                    print("ERROR: local file could not be opened\n");
-                  }
-
-                  // if copying succeeded
-                  if ($success) {
-                    $local_size  = filesize($local);
-                    $remote_size = filesize($remote);
-
-                    // check if files have same size
-                    if ((false !== $local_size) &&
-                        (false !== $remote_size) &&
-                        ($local_size === $remote_size)) {
-                      file_put_contents(expand_path_single(PUSHINFO_PATH, $params),
-                                        $ham_counter . PUSHINFO_MESSAGE_HAM .
-                                        $spam_counter . PUSHINFO_MESSAGE_SPAM);
-
-                      print("SUCCESS: done\n");
-                    } else {
-                      // try to remove remote file
-                      unlink($remote);
-
-                      print("FAIL: filesize mismatch\n");
-                    }
+                    print("SUCCESS: done\n");
                   } else {
                     // try to remove remote file
-                    unlink($remote);
+                    $sftp->delete($remote);
 
-                    print("FAIL: write failed\n");
+                    print("FAIL: filesize mismatch\n");
                   }
                 } else {
-                  print("ERROR: SFTP establishment failed\n");
+                  // try to remove remote file
+                  $sftp->delete($remote);
+
+                  print("FAIL: write failed\n");
                 }
               } else {
-                print("ERROR: SSH authentication failed\n");
+                print("ERROR: SFTP login failed\n");
               }
-
-              $connection = null;
             } else {
-              print("ERROR: SSH connection failed\n");
+              print("ERROR: remote public key mismatch\n");
             }
+
+            $sftp = null;
           } else {
             print("ERROR: status export failed\n");
           }
@@ -225,7 +187,7 @@
       if (is_int(TIMEOUT)) {
         allow_concurrency(TIMEOUT);
       } else {
-        allow_concurrency(expand_path_single(TIMEOUT, $params));
+        allow_concurrency(replace_placeholders(TIMEOUT, $params));
       }
     } else {
       print("ERROR: setting timeout failed\n");
@@ -238,6 +200,7 @@
       defined("REMOTE_PATH") &&
       defined("REMOTE_HOSTNAME") &&
       defined("REMOTE_PORT") &&
+      defined("REMOTE_PUBKEY_FILE") &&
       defined("REMOTE_USERNAME") &&
       defined("REMOTE_PASSWORD") &&
       defined("PUSHINFO_PATH") &&
